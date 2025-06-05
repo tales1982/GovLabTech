@@ -22,23 +22,23 @@ function normalize(str) {
     ? str
         .toString()
         .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[̀-ͯ]/g, "")
         .replace(/\s+/g, " ")
         .trim()
         .toLowerCase()
     : '';
 }
 
-function generateNameVariations(name, firstname) {
+function generateNameVariations(lastname, firstname) {
   const variations = new Set();
-  const full = `${firstname} ${name}`;
+  const full = `${firstname} ${lastname}`;
   variations.add(full);
-  variations.add(`${name} ${firstname}`);
+  variations.add(`${lastname} ${firstname}`);
   variations.add(`madame ${full}`);
   variations.add(`monsieur ${full}`);
-  variations.add(`${name}, ${firstname}`);
+  variations.add(`${lastname}, ${firstname}`);
   variations.add(firstname);
-  variations.add(name);
+  variations.add(lastname);
   return Array.from(variations).map(normalize);
 }
 
@@ -56,48 +56,54 @@ function isDeputyMatch(row, nameVariations) {
 // LOAD DATA
 // =========================
 
-const data107 = readExcel(path.join(__dirname, "db", "107-presence-seance-publique.xlsx"));
-const data109 = readExcel(path.join(__dirname, "db", "109-votes.xlsx"));
-const data112 = readExcel(path.join(__dirname, "db", "112-texte-loi.xlsx"));
+const dataPresence = readExcel(path.join(__dirname, "db", "107-presence-seance-publique.xlsx"));
+const dataVotes = readExcel(path.join(__dirname, "db", "109-votes.xlsx"));
+const dataLaws = readExcel(path.join(__dirname, "db", "112-texte-loi.xlsx"));
 
 // =========================
 // API
 // =========================
 
-app.get("/deputado", (req, res) => {
-  const nomeBusca = req.query.nome?.trim();
-  if (!nomeBusca) return res.status(400).json({ error: "Name is required (use ?nome=Lastname Firstname)" });
+app.get("/deputy", (req, res) => {
+  const searchName = req.query.name?.trim();
+  if (!searchName) {
+    return res.status(400).json({ error: "Name is required (use ?name=Lastname Firstname)" });
+  }
 
-  const partes = nomeBusca.split(" ");
-  const [firstName, ...rest] = partes;
-  const lastName = rest.join(" ") || firstName;
+  const parts = searchName.split(" ");
+  const [firstName, ...rest] = parts;
 
+  if (!firstName || rest.length === 0) {
+    return res.status(400).json({ error: "Please provide both first name and last name" });
+  }
+
+  const lastName = rest.join(" ");
   const nameVariations = generateNameVariations(lastName, firstName);
 
-  const registrosDeputado = data107.filter((row) => isDeputyMatch(row, nameVariations));
+  const matchedPresence = dataPresence.filter((row) => isDeputyMatch(row, nameVariations));
 
-  if (registrosDeputado.length === 0) {
+  if (matchedPresence.length === 0) {
     return res.status(404).json({ error: "Deputy not found" });
   }
 
-  const ref = registrosDeputado.find((r) => r.political_party || r.political_group);
-  const partido = ref?.political_party || "Not informed";
-  const grupo = ref?.political_group;
+  const ref = matchedPresence.find((r) => r.political_party || r.political_group);
+  const party = ref?.political_party || "Not informed";
+  const group = ref?.political_group;
 
-  const statusContagem = {
+  const presenceStats = {
     present: 0,
     excused: 0,
     foreign_mission: 0,
     absent: 0,
   };
 
-  registrosDeputado.forEach((r) => {
+  matchedPresence.forEach((r) => {
     const s = normalize(r.meeting_presence);
-    if (statusContagem[s] !== undefined) statusContagem[s]++;
+    if (presenceStats[s] !== undefined) presenceStats[s]++;
   });
 
-  const votos = data109.filter((row) => isDeputyMatch(row, nameVariations));
-  const votosStats = votos.reduce(
+  const matchedVotes = dataVotes.filter((row) => isDeputyMatch(row, nameVariations));
+  const voteStats = matchedVotes.reduce(
     (acc, v) => {
       const res = normalize(v.vote_result);
       if (res === "oui") acc.oui++;
@@ -108,39 +114,40 @@ app.get("/deputado", (req, res) => {
     { oui: 0, non: 0, abstention: 0 }
   );
 
-  const projetos = data112.filter((row) => {
+  const matchedLaws = dataLaws.filter((row) => {
     const authors = normalize(row.law_authors || "");
     return nameVariations.some((v) => authors.includes(v));
   });
 
   res.json({
-    deputado: `${firstName} ${lastName}`,
-    grupo_politico: grupo,
-    partido: partido,
-    presencas: {
-      total: registrosDeputado.length,
-      status: statusContagem,
-      sessoes: registrosDeputado.map((p) => ({
-        data: p.meeting_date,
-        sessao: p.meeting_number,
+    name: lastName,
+    firstname: firstName,
+    political_group: group,
+    political_party: party,
+    presence: {
+      total: matchedPresence.length,
+      status: presenceStats,
+      sessions: matchedPresence.map((p) => ({
+        date: p.meeting_date,
+        session: p.meeting_number,
         status: p.meeting_presence,
       })),
     },
-    projetos: {
-      total: projetos.length,
-      detalhes: projetos.map((p) => ({
-        titulo: p.law_title,
+    laws: {
+      total: matchedLaws.length,
+      details: matchedLaws.map((p) => ({
+        title: p.law_title,
         status: p.law_status,
-        autores: p.law_authors,
+        authors: p.law_authors,
       })),
     },
-    votos: {
-      total: votos.length,
-      stats: votosStats,
-      detalhes: votos.map((v) => ({
-        data: v.meeting_date,
-        votacao: v.vote_name,
-        resultado: v.vote_result,
+    votes: {
+      total: matchedVotes.length,
+      stats: voteStats,
+      details: matchedVotes.map((v) => ({
+        date: v.meeting_date,
+        vote_name: v.vote_name,
+        result: v.vote_result,
       })),
     },
   });

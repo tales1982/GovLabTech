@@ -1,16 +1,20 @@
+// styles/global.ts
 import { createGlobalStyle } from "styled-components";
-import { theme } from "./themes";
 
 const GlobalStyle = createGlobalStyle`
-  *, *::before, *::after {
+  body {
     margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+    font-family: 'Open Sans', sans-serif;
+    background-color: #f5f7fa;
+    color: #212529;
   }
 
-  body {
-    font-family: sans-serif;
-    background-color: ${({ theme }) => theme.colors.background};
+  h1, h2, h3 {
+    color: #003366; /* Azul institucional */
+  }
+
+  strong {
+    color: #555;
   }
 `;
 

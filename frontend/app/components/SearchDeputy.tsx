@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import axios from "axios";
 import {
   PieChart,
@@ -23,9 +24,10 @@ import {
   DeputyGrid,
   Card,
   ChartContainer,
+  ChartRow,
 } from "../../styles/SearchDeputy.styles";
+import CompareInfo from "./CompareInfo";
 
-// Cores distintas e não repetidas
 const COLORS: Record<string, string> = {
   present: "#28a745",
   excused: "#ffc107",
@@ -45,34 +47,61 @@ export default function SearchDeputy() {
   const [deputies, setDeputies] = useState<any[]>([]);
   const [chartType, setChartType] = useState<"bar" | "pie">("pie");
   const [error, setError] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("deputies");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setDeputies(parsed);
+        }
+      } catch (err) {
+        console.error("Erro ao parsear deputies:", err);
+      }
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (hydrated) {
+      localStorage.setItem("deputies", JSON.stringify(deputies));
+    }
+  }, [deputies, hydrated]);
 
   const fetchDeputy = async () => {
     try {
       setError("");
-      const [lastname, ...firstnameParts] = searchTerm.trim().split(" ");
-      const firstname = firstnameParts.join(" ");
-      if (!lastname || !firstname) {
-        setError("Please enter both last name and first name");
+      const parts = searchTerm.trim().split(" ");
+      if (parts.length < 2) {
+        setError("Please enter both first name and last name");
         return;
       }
+      const name = parts.join(" ");
 
-      const res = await axios.get("http://localhost:3001/deputado", {
-        params: { nome: lastname, firstname },
+      const res = await axios.get("http://localhost:3001/deputy", {
+        params: { name },
       });
 
       const alreadyExists = deputies.find(
-        (d) => d.deputado === res.data.deputado
+        (d) => d.name === res.data.name && d.firstname === res.data.firstname
       );
       if (alreadyExists) {
         setError("This deputy has already been added.");
         return;
       }
 
-      setDeputies([...deputies, res.data]);
+      setDeputies([res.data, ...deputies]);
       setSearchTerm("");
     } catch (err) {
       setError("Deputy not found or error fetching data");
     }
+  };
+
+  const clearDeputies = () => {
+    localStorage.removeItem("deputies");
+    setDeputies([]);
   };
 
   const getDataWithEmojis = (rawData: any[]) => {
@@ -99,7 +128,6 @@ export default function SearchDeputy() {
 
   const renderPie = (title: string, rawData: any[]) => {
     const data = getDataWithEmojis(rawData);
-
     const legendPayload = rawData.map((entry) => ({
       value: entry.name,
       type: "square" as const,
@@ -109,7 +137,7 @@ export default function SearchDeputy() {
     return (
       <ChartContainer>
         <h4>{title}</h4>
-        <ResponsiveContainer width="100%" height={250}>
+        <ResponsiveContainer width="100%" height={180}>
           <PieChart>
             <Pie
               data={data}
@@ -117,7 +145,7 @@ export default function SearchDeputy() {
               nameKey="label"
               cx="50%"
               cy="50%"
-              outerRadius={80}
+              outerRadius={60}
               label
             >
               {data.map((entry, i) => (
@@ -157,21 +185,34 @@ export default function SearchDeputy() {
   const renderChart = (title: string, data: any[]) =>
     chartType === "pie" ? renderPie(title, data) : renderBar(title, data);
 
+  if (!hydrated) return null;
+
   return (
     <Container>
-      <h1>Compare Deputies</h1>
+      <h1 style={{ fontSize: "2rem", fontWeight: 700, color: "#003366", marginBottom: "1rem" }}>
+        Deputies Comparison
+      </h1>
+      <CompareInfo />
       <InputGroup>
         <Input
-          placeholder="Full name (e.g. Cahen Corinne)"
+          placeholder="Full name (Firstname Lastname)"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-        <Button onClick={fetchDeputy}>Search</Button>
+        <Button style={{ backgroundColor: "#003366" }} onClick={fetchDeputy}>
+          Search
+        </Button>
         <ToggleButton
           onClick={() => setChartType(chartType === "pie" ? "bar" : "pie")}
         >
           Toggle to {chartType === "pie" ? "Bar Chart" : "Pie Chart"}
         </ToggleButton>
+        <Button
+          style={{ backgroundColor: "#dc3545", marginLeft: "0.5rem", color: "#fff" }}
+          onClick={clearDeputies}
+        >
+          Clear All
+        </Button>
       </InputGroup>
 
       {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
@@ -179,62 +220,45 @@ export default function SearchDeputy() {
       <DeputyGrid>
         {deputies.map((data, index) => (
           <Card key={index}>
-            <h2>{data.deputado}</h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h2 style={{ margin: 0 }}>{data.firstname} {data.name}</h2>
+              <Link href={`/projects/${encodeURIComponent(`${data.firstname}-${data.name}`)}`}>
+                <Button style={{ marginLeft: "1rem", backgroundColor: "#0d6efd" }}>
+                  View Projects
+                </Button>
+              </Link>
+            </div>
+
             <p>
-              <strong>Party:</strong> {data.partido}
+              <strong>Party:</strong> {data.political_party}
               <br />
-              {data.grupo_politico && (
+              {data.political_group && (
                 <>
-                  <strong>Group:</strong> {data.grupo_politico}
+                  <strong>Group:</strong> {data.political_group}
                 </>
               )}
             </p>
 
-            {renderChart(
-              "Presences",
-              Object.entries(data.presencas.status).map(([k, v]) => ({
+            <ChartRow>
+              {renderChart("Presences", Object.entries(data.presence.status).map(([k, v]) => ({
                 name: k,
                 value: v,
-              }))
-            )}
-
-            {renderChart("Projects", [
-              {
-                name: "publie",
-                value: data.projetos.detalhes.filter((p: any) =>
-                  p.status?.toLowerCase().includes("publie")
-                ).length,
-              },
-              {
-                name: "retire",
-                value: data.projetos.detalhes.filter((p: any) =>
-                  p.status?.toLowerCase().includes("retire")
-                ).length,
-              },
-              {
-                name: "rejete",
-                value: data.projetos.detalhes.filter((p: any) =>
-                  p.status?.toLowerCase().includes("rejete")
-                ).length,
-              },
-              {
-                name: "autres",
-                value: data.projetos.detalhes.filter((p: any) => {
+              })))}
+              {renderChart("Projects", [
+                { name: "publie", value: data.laws.details.filter((p: any) => p.status?.toLowerCase().includes("publie")).length },
+                { name: "retire", value: data.laws.details.filter((p: any) => p.status?.toLowerCase().includes("retire")).length },
+                { name: "rejete", value: data.laws.details.filter((p: any) => p.status?.toLowerCase().includes("rejete")).length },
+                { name: "autres", value: data.laws.details.filter((p: any) => {
                   const s = p.status?.toLowerCase() || "";
-                  return (
-                    !s.includes("publie") &&
-                    !s.includes("retire") &&
-                    !s.includes("rejete")
-                  );
-                }).length,
-              },
-            ])}
-
-            {renderChart("Votes", [
-              { name: "oui", value: data.votos.stats.oui },
-              { name: "non", value: data.votos.stats.non },
-              { name: "abstention", value: data.votos.stats.abstention },
-            ])}
+                  return !s.includes("publie") && !s.includes("retire") && !s.includes("rejete");
+                }).length },
+              ])}
+              {renderChart("Votes", [
+                { name: "oui", value: data.votes.stats.oui },
+                { name: "non", value: data.votes.stats.non },
+                { name: "abstention", value: data.votes.stats.abstention },
+              ])}
+            </ChartRow>
           </Card>
         ))}
       </DeputyGrid>
