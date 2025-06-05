@@ -3,6 +3,21 @@
 import { useState } from "react";
 import axios from "axios";
 import styled from "styled-components";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+
+// Fixed colors per status
+const COLORS_MAP: Record<string, string> = {
+  Approved: "#28a745",   // green
+  Rejected: "#dc3545",   // red
+  Withdrawn: "#ffc107",  // yellow
+};
 
 const highlightColor = "#d4edda";
 
@@ -136,6 +151,13 @@ export default function SearchDeputy() {
           const party = deputy.parties?.[0]?.trim() || "";
           const isHighlighted = repeatedParties[party] > 1;
 
+          const projectStats = deputy.projetos || {};
+          const chartData = [
+            { name: "Approved", value: projectStats.aprovados || 0 },
+            { name: "Rejected", value: projectStats.rejeitados || 0 },
+            { name: "Withdrawn", value: projectStats.retirados || 0 },
+          ];
+
           return (
             <Card key={deputy.full_name}>
               <h2>{deputy.full_name}</h2>
@@ -161,7 +183,7 @@ export default function SearchDeputy() {
                 </>
               )}
 
-              <h3>Rubrique Types:</h3>
+              <h3>Rubric Types:</h3>
               <List>
                 {(Object.entries(deputy.rubrique_types || {}) as [
                   string,
@@ -172,6 +194,51 @@ export default function SearchDeputy() {
                   </li>
                 ))}
               </List>
+
+              <p style={{ fontSize: "0.9rem", marginTop: "1rem" }}>
+                <em>
+                  <strong>Note:</strong> The number of "Projet de loi" above
+                  refers to all sessions in which the deputy participated
+                  discussing laws — it does not necessarily mean authorship.
+                </em>
+              </p>
+
+              {chartData.some((d) => d.value > 0) && (
+                <>
+                  <h3 style={{ marginTop: "1rem" }}>
+                    Bills (Distribution as Author/Coauthor):
+                  </h3>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie
+                        data={chartData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={60}
+                        label
+                      >
+                        {chartData.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS_MAP[entry.name] || "#999"}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <p style={{ fontSize: "0.9rem" }}>
+                    <em>
+                      This chart shows only the bills in which the deputy is
+                      listed as an author or co-author, based on the{" "}
+                      <code>law_authors</code> field.
+                    </em>
+                  </p>
+                </>
+              )}
             </Card>
           );
         })}
