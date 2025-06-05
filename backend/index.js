@@ -2,99 +2,151 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+const XLSX = require("xlsx");
 
 const app = express();
 app.use(cors());
 
-const normalize = (str) =>
-  str
-    ?.toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z\s]/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+// =========================
+// UTILS
+// =========================
 
-// 📁 Leitura dos arquivos JSON
-const deputadosData = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "db", "deputados.json"))
-);
-const presencasData = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "db", "presence_presence.json"))
-);
-const projetosData = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "db", "leis_propostas.json"))
-);
+function readExcel(filePath) {
+  const workbook = XLSX.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+}
+
+function normalize(str) {
+  return str
+    ? str
+        .toString()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+    : '';
+}
+
+function generateNameVariations(name, firstname) {
+  const variations = new Set();
+  const full = `${firstname} ${name}`;
+  variations.add(full);
+  variations.add(`${name} ${firstname}`);
+  variations.add(`madame ${full}`);
+  variations.add(`monsieur ${full}`);
+  variations.add(`${name}, ${firstname}`);
+  variations.add(firstname);
+  variations.add(name);
+  return Array.from(variations).map(normalize);
+}
+
+function isDeputyMatch(row, nameVariations) {
+  const rowName = normalize(row.name);
+  const rowFirst = normalize(row.firstname);
+  const fullName = normalize(`${rowFirst} ${rowName}`);
+  return nameVariations.some(
+    (v) =>
+      rowName.includes(v) || rowFirst.includes(v) || fullName.includes(v)
+  );
+}
+
+// =========================
+// LOAD DATA
+// =========================
+
+const data107 = readExcel(path.join(__dirname, "db", "107-presence-seance-publique.xlsx"));
+const data109 = readExcel(path.join(__dirname, "db", "109-votes.xlsx"));
+const data112 = readExcel(path.join(__dirname, "db", "112-texte-loi.xlsx"));
+
+// =========================
+// API
+// =========================
 
 app.get("/deputado", (req, res) => {
-  const nomeBusca = req.query.nome?.toLowerCase();
-  if (!nomeBusca) return res.status(400).json({ error: "Nome é obrigatório" });
+  const nomeBusca = req.query.nome?.trim();
+  if (!nomeBusca) return res.status(400).json({ error: "Name is required (use ?nome=Lastname Firstname)" });
 
-  const deputado = deputadosData.find((d) =>
-    d.full_name.toLowerCase().includes(nomeBusca)
-  );
+  const partes = nomeBusca.split(" ");
+  const [firstName, ...rest] = partes;
+  const lastName = rest.join(" ") || firstName;
 
-  if (!deputado) {
-    return res.status(404).json({ error: "Deputado não encontrado" });
+  const nameVariations = generateNameVariations(lastName, firstName);
+
+  const registrosDeputado = data107.filter((row) => isDeputyMatch(row, nameVariations));
+
+  if (registrosDeputado.length === 0) {
+    return res.status(404).json({ error: "Deputy not found" });
   }
 
-  const normalizedDeputy = normalize(deputado.full_name);
+  const ref = registrosDeputado.find((r) => r.political_party || r.political_group);
+  const partido = ref?.political_party || "Not informed";
+  const grupo = ref?.political_group;
 
-  // 📊 PRESENÇA
-  const presencasDeputado = presencasData.filter((p) => {
-    const fullNameFromPresence = normalize(`${p.firstname} ${p.name}`);
-    return normalizedDeputy.includes(fullNameFromPresence);
+  const statusContagem = {
+    present: 0,
+    excused: 0,
+    foreign_mission: 0,
+    absent: 0,
+  };
+
+  registrosDeputado.forEach((r) => {
+    const s = normalize(r.meeting_presence);
+    if (statusContagem[s] !== undefined) statusContagem[s]++;
   });
 
-  const totalPresent = presencasDeputado.filter(
-    (p) => p.meeting_presence === "PRESENT"
-  ).length;
+  const votos = data109.filter((row) => isDeputyMatch(row, nameVariations));
+  const votosStats = votos.reduce(
+    (acc, v) => {
+      const res = normalize(v.vote_result);
+      if (res === "oui") acc.oui++;
+      else if (res === "non") acc.non++;
+      else if (res === "abstention") acc.abstention++;
+      return acc;
+    },
+    { oui: 0, non: 0, abstention: 0 }
+  );
 
-  const totalAbsent = presencasDeputado.filter(
-    (p) => p.meeting_presence === "ABSENT"
-  ).length;
-
-  // 📊 PROJETOS DE LEI — contar todas as participações (inclusive coautoria)
-  const projetosDeputado = projetosData.filter((p) => {
-    const autores = normalize(p.law_authors || "");
-    return autores.includes(normalizedDeputy);
+  const projetos = data112.filter((row) => {
+    const authors = normalize(row.law_authors || "");
+    return nameVariations.some((v) => authors.includes(v));
   });
-
-  const totalProjetos = projetosDeputado.length;
-  const aprovados = projetosDeputado.filter((p) =>
-    p.law_status?.toLowerCase().includes("publie")
-  ).length;
-  const rejeitados = projetosDeputado.filter((p) =>
-    p.law_status?.toLowerCase().includes("rejete")
-  ).length;
-  const retirados = projetosDeputado.filter((p) =>
-    p.law_status?.toLowerCase().includes("retire")
-  ).length;
-  const outros = projetosDeputado.filter(
-    (p) =>
-      !p.law_status?.toLowerCase().includes("publie") &&
-      !p.law_status?.toLowerCase().includes("rejete") &&
-      !p.law_status?.toLowerCase().includes("retire")
-  ).length;
 
   res.json({
-    ...deputado,
-    presenca: {
-      total_present: totalPresent,
-      total_absent: totalAbsent,
+    deputado: `${firstName} ${lastName}`,
+    grupo_politico: grupo,
+    partido: partido,
+    presencas: {
+      total: registrosDeputado.length,
+      status: statusContagem,
+      sessoes: registrosDeputado.map((p) => ({
+        data: p.meeting_date,
+        sessao: p.meeting_number,
+        status: p.meeting_presence,
+      })),
     },
     projetos: {
-      total: totalProjetos,
-      aprovados,
-      rejeitados,
-      retirados,
-      outros,
+      total: projetos.length,
+      detalhes: projetos.map((p) => ({
+        titulo: p.law_title,
+        status: p.law_status,
+        autores: p.law_authors,
+      })),
     },
-    projetos_detalhes: projetosDeputado,
+    votos: {
+      total: votos.length,
+      stats: votosStats,
+      detalhes: votos.map((v) => ({
+        data: v.meeting_date,
+        votacao: v.vote_name,
+        resultado: v.vote_result,
+      })),
+    },
   });
 });
 
 const PORT = 3001;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  console.log(`✅ Server running at http://localhost:${PORT}`);
 });

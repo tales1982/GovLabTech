@@ -12,30 +12,31 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Fixed colors per status
-const COLORS_MAP: Record<string, string> = {
-  Approved: "#28a745",   // green
-  Rejected: "#dc3545",   // red
-  Withdrawn: "#ffc107",  // yellow
+const COLORS = {
+  present: "#28a745",
+  excused: "#ffc107",
+  foreign_mission: "#17a2b8",
+  absent: "#dc3545",
+  publie: "#007bff",
+  retire: "#ffc107",
+  rejete: "#dc3545",
+  autres: "#6c757d",
+  oui: "#28a745",
+  non: "#dc3545",
+  abstention: "#ffc107",
 };
 
-const highlightColor = "#d4edda";
-
 const Container = styled.main`
-  width: 100vw;
-  margin: 4rem auto;
   padding: 2rem;
+  max-width: 100%;
   font-family: "Georgia", serif;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
 `;
 
 const InputGroup = styled.div`
-  width: 400px;
   display: flex;
   gap: 1rem;
-  margin-bottom: 2rem;
+  max-width: 600px;
+  margin: 0 auto 2rem auto;
 `;
 
 const Input = styled.input`
@@ -51,198 +52,161 @@ const Button = styled.button`
   border: none;
   border-radius: 4px;
   font-weight: bold;
-  cursor: pointer;
-
-  &:hover {
-    background-color: #6c1733;
-  }
 `;
 
-const CardsWrapper = styled.div`
+const DeputyGrid = styled.div`
   display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
-  justify-content: center;
+  gap: 2rem;
+  overflow-x: auto;
 `;
 
 const Card = styled.div`
-  background: #f1f1f1;
-  padding: 1.5rem;
+  background: #f9f9f9;
+  padding: 1rem;
   border-radius: 8px;
-  flex: 1 1 300px;
-  max-width: 300px;
-  box-sizing: border-box;
+  min-width: 350px;
+  flex-shrink: 0;
 `;
 
-const List = styled.ul`
-  padding-left: 1.5rem;
-`;
-
-const HighlightLine = styled.p<{ $highlight?: boolean }>`
-  background-color: ${({ $highlight }) =>
-    $highlight ? highlightColor : "transparent"};
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+const ChartContainer = styled.div`
+  margin-top: 1rem;
 `;
 
 export default function SearchDeputy() {
-  const [name, setName] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [deputies, setDeputies] = useState<any[]>([]);
   const [error, setError] = useState("");
-
-  const getRepeatedParties = () => {
-    const counts: Record<string, number> = {};
-    deputies.forEach((dep) => {
-      const party = dep.parties?.[0]?.trim();
-      if (party) counts[party] = (counts[party] || 0) + 1;
-    });
-    return Object.fromEntries(
-      Object.entries(counts).filter(([_, count]) => count > 1)
-    );
-  };
-
-  const repeatedParties = getRepeatedParties();
 
   const fetchDeputy = async () => {
     try {
       setError("");
-      const res = await axios.get("http://localhost:3001/deputado", {
-        params: { nome: name },
-      });
-
-      const alreadyAdded = deputies.find(
-        (d) => d.full_name === res.data.full_name
-      );
-      if (alreadyAdded) {
-        setError("This deputy is already in the list.");
+      const [lastname, ...firstnameParts] = searchTerm.trim().split(" ");
+      const firstname = firstnameParts.join(" ");
+      if (!lastname || !firstname) {
+        setError("Please enter both last name and first name");
         return;
       }
 
-      if (deputies.length >= 4) {
-        setError("You can only add up to 4 deputies.");
+      const res = await axios.get("http://localhost:3001/deputado", {
+        params: { nome: lastname, firstname },
+      });
+
+      const alreadyExists = deputies.find(
+        (d) => d.deputado === res.data.deputado
+      );
+      if (alreadyExists) {
+        setError("This deputy has already been added.");
         return;
       }
 
       setDeputies([...deputies, res.data]);
-      setName("");
+      setSearchTerm("");
     } catch (err) {
-      setError("Deputy not found");
+      setError("Deputy not found or error fetching data");
     }
   };
 
+  const renderPie = (title: string, data: any[]) => (
+    <ChartContainer>
+      <h4>{title}</h4>
+      <ResponsiveContainer width="100%" height={220}>
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            cx="50%"
+            cy="50%"
+            outerRadius={80}
+            label
+          >
+            {data.map((entry, i) => (
+              <Cell key={i} fill={COLORS[entry.name] || "#999"} />
+            ))}
+          </Pie>
+          <Tooltip />
+          <Legend />
+        </PieChart>
+      </ResponsiveContainer>
+    </ChartContainer>
+  );
+
   return (
     <Container>
-      <h1>Search Deputy</h1>
-
+      <h1>Compare Deputies</h1>
       <InputGroup>
         <Input
-          type="text"
-          placeholder="Enter deputy name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          placeholder="Full name (e.g. Cahen Corinne)"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
         />
         <Button onClick={fetchDeputy}>Search</Button>
       </InputGroup>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
 
-      <CardsWrapper>
-        {deputies.map((deputy) => {
-          const party = deputy.parties?.[0]?.trim() || "";
-          const isHighlighted = repeatedParties[party] > 1;
-
-          const projectStats = deputy.projetos || {};
-          const chartData = [
-            { name: "Approved", value: projectStats.aprovados || 0 },
-            { name: "Rejected", value: projectStats.rejeitados || 0 },
-            { name: "Withdrawn", value: projectStats.retirados || 0 },
-          ];
-
-          return (
-            <Card key={deputy.full_name}>
-              <h2>{deputy.full_name}</h2>
-              <HighlightLine $highlight={isHighlighted}>
-                <strong>Party:</strong> {deputy.parties?.join(", ")}
-              </HighlightLine>
-
-              <p>
-                <strong>Total Interventions:</strong>{" "}
-                {deputy.total_interventions}
-              </p>
-
-              {deputy.presenca && (
+      <DeputyGrid>
+        {deputies.map((data, index) => (
+          <Card key={index}>
+            <h2>{data.deputado}</h2>
+            <p>
+              <strong>Party:</strong> {data.partido}
+              <br />
+              {data.grupo_politico && (
                 <>
-                  <p>
-                    <strong>Total Days Present:</strong>{" "}
-                    {deputy.presenca.total_present}
-                  </p>
-                  <p>
-                    <strong>Total Days Absent:</strong>{" "}
-                    {deputy.presenca.total_absent}
-                  </p>
+                  <strong>Group:</strong> {data.grupo_politico}
                 </>
               )}
+            </p>
 
-              <h3>Rubric Types:</h3>
-              <List>
-                {(Object.entries(deputy.rubrique_types || {}) as [
-                  string,
-                  number
-                ][]).map(([key, value]) => (
-                  <li key={key}>
-                    {key}: {value}
-                  </li>
-                ))}
-              </List>
+            {renderPie(
+              "Presences",
+              Object.entries(data.presencas.status).map(([k, v]) => ({
+                name: k,
+                value: v,
+              }))
+            )}
 
-              <p style={{ fontSize: "0.9rem", marginTop: "1rem" }}>
-                <em>
-                  <strong>Note:</strong> The number of "Projet de loi" above
-                  refers to all sessions in which the deputy participated
-                  discussing laws — it does not necessarily mean authorship.
-                </em>
-              </p>
+            {renderPie("Projects", [
+              {
+                name: "publie",
+                value: data.projetos.detalhes.filter((p: any) =>
+                  p.status?.toLowerCase().includes("publie")
+                ).length,
+              },
+              {
+                name: "retire",
+                value: data.projetos.detalhes.filter((p: any) =>
+                  p.status?.toLowerCase().includes("retire")
+                ).length,
+              },
+              {
+                name: "rejete",
+                value: data.projetos.detalhes.filter((p: any) =>
+                  p.status?.toLowerCase().includes("rejete")
+                ).length,
+              },
+              {
+                name: "autres",
+                value: data.projetos.detalhes.filter((p: any) => {
+                  const s = p.status?.toLowerCase() || "";
+                  return (
+                    !s.includes("publie") &&
+                    !s.includes("retire") &&
+                    !s.includes("rejete")
+                  );
+                }).length,
+              },
+            ])}
 
-              {chartData.some((d) => d.value > 0) && (
-                <>
-                  <h3 style={{ marginTop: "1rem" }}>
-                    Bills (Distribution as Author/Coauthor):
-                  </h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={60}
-                        label
-                      >
-                        {chartData.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS_MAP[entry.name] || "#999"}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <p style={{ fontSize: "0.9rem" }}>
-                    <em>
-                      This chart shows only the bills in which the deputy is
-                      listed as an author or co-author, based on the{" "}
-                      <code>law_authors</code> field.
-                    </em>
-                  </p>
-                </>
-              )}
-            </Card>
-          );
-        })}
-      </CardsWrapper>
+            {renderPie("Votes", [
+              { name: "oui", value: data.votos.stats.oui },
+              { name: "non", value: data.votos.stats.non },
+              { name: "abstention", value: data.votos.stats.abstention },
+            ])}
+          </Card>
+        ))}
+      </DeputyGrid>
     </Container>
   );
 }
