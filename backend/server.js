@@ -1,32 +1,25 @@
+// =========================
+// BACKEND (server.js)
+// =========================
+
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 
 const app = express();
 app.use(cors());
 
-// =========================
-// UTILS
-// =========================
-
 function readExcel(filePath) {
   const workbook = XLSX.readFile(filePath);
   const sheetName = workbook.SheetNames[0];
-  return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+  return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
 }
 
 function normalize(str) {
   return str
-    ? str
-        .toString()
-        .normalize("NFD")
-        .replace(/[̀-ͯ]/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase()
-    : '';
+    ? str.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase()
+    : "";
 }
 
 function generateNameVariations(lastname, firstname) {
@@ -47,59 +40,36 @@ function isDeputyMatch(row, nameVariations) {
   const rowFirst = normalize(row.firstname);
   const fullName = normalize(`${rowFirst} ${rowName}`);
   return nameVariations.some(
-    (v) =>
-      rowName.includes(v) || rowFirst.includes(v) || fullName.includes(v)
+    (v) => rowName.includes(v) || rowFirst.includes(v) || fullName.includes(v)
   );
 }
 
-// =========================
-// LOAD DATA
-// =========================
-
+const dataDeputies = readExcel(path.join(__dirname, "db", "105-depute.xlsx"));
 const dataPresence = readExcel(path.join(__dirname, "db", "107-presence-seance-publique.xlsx"));
 const dataVotes = readExcel(path.join(__dirname, "db", "109-votes.xlsx"));
 const dataLaws = readExcel(path.join(__dirname, "db", "112-texte-loi.xlsx"));
-
-// ✅ Novo JSON com imagens
 const photoMap = require("./db/deputy-photos.json");
-
-// =========================
-// API
-// =========================
 
 app.get("/deputy", (req, res) => {
   const searchName = req.query.name?.trim();
-  if (!searchName) {
-    return res.status(400).json({ error: "Name is required (use ?name=Lastname Firstname)" });
-  }
+  if (!searchName) return res.status(400).json({ error: "Name is required" });
 
   const parts = searchName.split(" ");
   const [firstName, ...rest] = parts;
-
-  if (!firstName || rest.length === 0) {
-    return res.status(400).json({ error: "Please provide both first name and last name" });
-  }
-
   const lastName = rest.join(" ");
+
+  if (!firstName || !lastName) return res.status(400).json({ error: "Please provide both names" });
+
   const nameVariations = generateNameVariations(lastName, firstName);
 
   const matchedPresence = dataPresence.filter((row) => isDeputyMatch(row, nameVariations));
-
-  if (matchedPresence.length === 0) {
-    return res.status(404).json({ error: "Deputy not found" });
-  }
+  if (matchedPresence.length === 0) return res.status(404).json({ error: "Deputy not found" });
 
   const ref = matchedPresence.find((r) => r.political_party || r.political_group);
   const party = ref?.political_party || "Not informed";
   const group = ref?.political_group;
 
-  const presenceStats = {
-    present: 0,
-    excused: 0,
-    foreign_mission: 0,
-    absent: 0,
-  };
-
+  const presenceStats = { present: 0, excused: 0, foreign_mission: 0, absent: 0 };
   matchedPresence.forEach((r) => {
     const s = normalize(r.meeting_presence);
     if (presenceStats[s] !== undefined) presenceStats[s]++;
@@ -122,18 +92,19 @@ app.get("/deputy", (req, res) => {
     return nameVariations.some((v) => authors.includes(v));
   });
 
-  // ✅ Busca imagem no JSON
   const fullName = normalize(`${firstName} ${lastName}`);
   const photoEntry = photoMap.find((d) => normalize(d.name) === fullName);
   const imageUrl = photoEntry?.img || null;
-  console.log("Searching for photo:", fullName);
-console.log("photoEntry:", photoEntry);
 
+  const deputyInfo = dataDeputies.find(
+    (d) => normalize(d.name) === normalize(lastName) && normalize(d.firstname) === normalize(firstName)
+  );
 
   res.json({
     name: lastName,
     firstname: firstName,
     photo: imageUrl,
+    start_date: deputyInfo?.start_date || null,
     political_group: group,
     political_party: party,
     presence: {
@@ -165,9 +136,22 @@ console.log("photoEntry:", photoEntry);
   });
 });
 
-// =========================
-// SERVER
-// =========================
+app.get("/deputies", (req, res) => {
+  const deputiesList = dataDeputies.map((d) => ({
+    title: d.person_title,
+    name: d.name,
+    firstname: d.firstname,
+    birth_date: d.birth_date,
+    start_date: d.start_date,
+    political_group: d.political_group,
+    political_party: d.political_party,
+    address: d.adr_formated,
+    phone: d.phone_ext,
+    mobile: d.mobile,
+    email: d.email,
+  }));
+  res.json(deputiesList);
+});
 
 const PORT = 3001;
 app.listen(PORT, () => {

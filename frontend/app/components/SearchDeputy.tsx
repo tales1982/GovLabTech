@@ -26,9 +26,9 @@ import {
   ChartContainer,
   ChartRow,
   InfoColumn,
-  PartyBadge,
 } from "../../styles/SearchDeputy.styles";
 import CompareInfo from "./CompareInfo";
+import DeputyList from "./DeputyList";
 
 const COLORS: Record<string, string> = {
   present: "#28a745",
@@ -41,7 +41,7 @@ const COLORS: Record<string, string> = {
   autres: "#6c757d",
   oui: "#20c997",
   non: "#e83e8c",
-  abstention: "#fd7e14",
+  abstention: "rgb(233, 138, 13)",
 };
 
 export default function SearchDeputy() {
@@ -118,12 +118,6 @@ export default function SearchDeputy() {
       return {
         ...entry,
         label,
-        fill:
-          entry.value === max && max !== min
-            ? "#28a745"
-            : entry.value === min && max !== min
-            ? "#dc3545"
-            : COLORS[entry.name] || "#999",
       };
     });
   };
@@ -151,7 +145,7 @@ export default function SearchDeputy() {
               label
             >
               {data.map((entry, i) => (
-                <Cell key={i} fill={entry.fill} />
+                <Cell key={i} fill={COLORS[entry.name] || "#999"} />
               ))}
             </Pie>
             <Tooltip />
@@ -175,7 +169,7 @@ export default function SearchDeputy() {
             <Legend />
             <Bar dataKey="value">
               {data.map((entry, i) => (
-                <Cell key={i} fill={entry.fill} />
+                <Cell key={i} fill={COLORS[entry.name] || "#999"} />
               ))}
             </Bar>
           </BarChart>
@@ -195,16 +189,7 @@ export default function SearchDeputy() {
 
   return (
     <Container>
-      <h1
-        style={{
-          fontSize: "2rem",
-          fontWeight: 700,
-          color: "#351219" ,
-          marginBottom: "1rem",
-        }}
-      >
-        Comparaison des Députés
-      </h1>
+      <h1>Comparaison des Députés</h1>
       <CompareInfo />
       <InputGroup>
         <Input
@@ -239,53 +224,43 @@ export default function SearchDeputy() {
       <DeputyGrid>
         {deputies.map((data, index) => (
           <Card key={index}>
-            {data.photo && (
-              <img
-                src={data.photo}
-                alt={`${data.firstname} ${data.name}`}
-                style={{
-                  width: "100px",
-                  height: "auto",
-                  borderRadius: "8px",
-                  objectFit: "cover",
-                }}
-              />
-            )}
-
-            <div style={{ minWidth: "200px" }}>
-              <h2 style={{ margin: 0 }}>
-                {data.firstname} {data.name}
-              </h2>
-              <p style={{ margin: "4px 0" }}>
-                <strong style={{ color: "#003366" }}>Party:</strong>{" "}
-                <span
+            <InfoColumn>
+              {data.photo && (
+                <img
+                  src={data.photo}
+                  alt={`${data.firstname} ${data.name}`}
                   style={{
-                    backgroundColor: "#003366",
-                    color: "#fff",
-                    padding: "2px 6px",
-                    borderRadius: "5px",
+                    width: "100px",
+                    height: "auto",
+                    borderRadius: "8px",
+                    objectFit: "cover",
+                    marginBottom: "0.5rem",
                   }}
-                >
+                />
+              )}
+              <h2>{data.firstname} {data.name}</h2>
+              {data.start_date && (
+                <p style={{ fontSize: "0.85rem", color: "#5c202b" }}>
+                  Début de mandat: {data.start_date}
+                </p>
+              )}
+              <p>
+                <strong style={{ color: "#003366" }}>Party:</strong>{" "}
+                <span style={{ backgroundColor: "#003366", color: "#fff", padding: "2px 6px", borderRadius: "5px" }}>
                   {data.political_party}
                 </span>
               </p>
               {data.political_group && (
-                <p style={{ margin: "4px 0" }}>
+                <p>
                   <strong>Group:</strong> {data.political_group}
                 </p>
               )}
-              <Link
-                href={`/projects/${encodeURIComponent(
-                  `${data.firstname}-${data.name}`
-                )}`}
-              >
-                <Button
-                  style={{ backgroundColor: "#0d6efd", marginTop: "0.5rem" }}
-                >
+              <Link href={`/projects/${encodeURIComponent(`${data.firstname}-${data.name}`)}`}>
+                <Button style={{ backgroundColor: "#0d6efd", marginTop: "0.5rem" }}>
                   View Projects
                 </Button>
               </Link>
-            </div>
+            </InfoColumn>
 
             <ChartRow>
               {renderChart(
@@ -335,6 +310,18 @@ export default function SearchDeputy() {
           </Card>
         ))}
       </DeputyGrid>
+      <DeputyList
+  deputies={deputies.map((d) => ({
+    firstname: d.firstname,
+    name: d.name,
+    photo: d.photo || "", // fallback para não quebrar
+  }))}
+  onSelect={(fullName) => {
+    setSearchTerm(fullName);
+    fetchDeputy();
+  }}
+/>
+
     </Container>
   );
 }
