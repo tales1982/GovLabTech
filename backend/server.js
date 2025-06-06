@@ -60,22 +60,12 @@ const dataPresence = readExcel(path.join(__dirname, "db", "107-presence-seance-p
 const dataVotes = readExcel(path.join(__dirname, "db", "109-votes.xlsx"));
 const dataLaws = readExcel(path.join(__dirname, "db", "112-texte-loi.xlsx"));
 
+// ✅ Novo JSON com imagens
+const photoMap = require("./db/deputy-photos.json");
+
 // =========================
 // API
 // =========================
-
-const dataPhotos = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "db", "deputy-photos.json"), "utf-8")
-);
-
-
-function findPhotoUrl(firstname, lastname) {
-  const fullName = normalize(`${firstname} ${lastname}`);
-  const found = dataPhotos.find((p) => normalize(p.name) === fullName);
-  return found ? found.img : null;
-}
-
-
 
 app.get("/deputy", (req, res) => {
   const searchName = req.query.name?.trim();
@@ -132,9 +122,18 @@ app.get("/deputy", (req, res) => {
     return nameVariations.some((v) => authors.includes(v));
   });
 
+  // ✅ Busca imagem no JSON
+  const fullName = normalize(`${firstName} ${lastName}`);
+  const photoEntry = photoMap.find((d) => normalize(d.name) === fullName);
+  const imageUrl = photoEntry?.img || null;
+  console.log("Searching for photo:", fullName);
+console.log("photoEntry:", photoEntry);
+
+
   res.json({
     name: lastName,
     firstname: firstName,
+    photo: imageUrl,
     political_group: group,
     political_party: party,
     presence: {
@@ -165,6 +164,10 @@ app.get("/deputy", (req, res) => {
     },
   });
 });
+
+// =========================
+// SERVER
+// =========================
 
 const PORT = 3001;
 app.listen(PORT, () => {

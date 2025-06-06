@@ -25,6 +25,8 @@ import {
   Card,
   ChartContainer,
   ChartRow,
+  InfoColumn,
+  PartyBadge,
 } from "../../styles/SearchDeputy.styles";
 import CompareInfo from "./CompareInfo";
 
@@ -75,7 +77,7 @@ export default function SearchDeputy() {
       setError("");
       const parts = searchTerm.trim().split(" ");
       if (parts.length < 2) {
-        setError("Please enter both first name and last name");
+        setError("Veuillez entrer le prénom et le nom du député");
         return;
       }
       const name = parts.join(" ");
@@ -88,14 +90,14 @@ export default function SearchDeputy() {
         (d) => d.name === res.data.name && d.firstname === res.data.firstname
       );
       if (alreadyExists) {
-        setError("This deputy has already been added.");
+        setError("Ce député a déjà été ajouté.");
         return;
       }
 
       setDeputies([res.data, ...deputies]);
       setSearchTerm("");
     } catch (err) {
-      setError("Deputy not found or error fetching data");
+      setError("Député introuvable ou erreur lors de la récupération des données");
     }
   };
 
@@ -182,36 +184,53 @@ export default function SearchDeputy() {
     );
   };
 
-  const renderChart = (title: string, data: any[]) =>
-    chartType === "pie" ? renderPie(title, data) : renderBar(title, data);
+  const renderChart = (title: string, data: any[]) => {
+    const total = data.reduce((sum, d) => sum + d.value, 0);
+    const fullTitle = `${title} (${total})`;
 
-  if (!hydrated) return null;
+    return chartType === "pie"
+      ? renderPie(fullTitle, data)
+      : renderBar(fullTitle, data);
+  };
 
   return (
     <Container>
-      <h1 style={{ fontSize: "2rem", fontWeight: 700, color: "#003366", marginBottom: "1rem" }}>
-        Deputies Comparison
+      <h1
+        style={{
+          fontSize: "2rem",
+          fontWeight: 700,
+          color: "#351219" ,
+          marginBottom: "1rem",
+        }}
+      >
+        Comparaison des Députés
       </h1>
       <CompareInfo />
       <InputGroup>
         <Input
-          placeholder="Full name (Firstname Lastname)"
+          placeholder="Nom complet (Prénom Nom)"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-        <Button style={{ backgroundColor: "#003366" }} onClick={fetchDeputy}>
-          Search
+        <Button style={{ backgroundColor: "#893040" }} onClick={fetchDeputy}>
+          Rechercher
         </Button>
         <ToggleButton
           onClick={() => setChartType(chartType === "pie" ? "bar" : "pie")}
         >
-          Toggle to {chartType === "pie" ? "Bar Chart" : "Pie Chart"}
+          {chartType === "pie"
+            ? "Basculer en Diagramme en Barres"
+            : "Basculer en Diagramme Circulaire"}
         </ToggleButton>
         <Button
-          style={{ backgroundColor: "#dc3545", marginLeft: "0.5rem", color: "#fff" }}
+          style={{
+            backgroundColor: "#dc3545",
+            marginLeft: "0.5rem",
+            color: "#fff",
+          }}
           onClick={clearDeputies}
         >
-          Clear All
+          Tout Effacer
         </Button>
       </InputGroup>
 
@@ -220,40 +239,94 @@ export default function SearchDeputy() {
       <DeputyGrid>
         {deputies.map((data, index) => (
           <Card key={index}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <h2 style={{ margin: 0 }}>{data.firstname} {data.name}</h2>
-              <Link href={`/projects/${encodeURIComponent(`${data.firstname}-${data.name}`)}`}>
-                <Button style={{ marginLeft: "1rem", backgroundColor: "#0d6efd" }}>
+            {data.photo && (
+              <img
+                src={data.photo}
+                alt={`${data.firstname} ${data.name}`}
+                style={{
+                  width: "100px",
+                  height: "auto",
+                  borderRadius: "8px",
+                  objectFit: "cover",
+                }}
+              />
+            )}
+
+            <div style={{ minWidth: "200px" }}>
+              <h2 style={{ margin: 0 }}>
+                {data.firstname} {data.name}
+              </h2>
+              <p style={{ margin: "4px 0" }}>
+                <strong style={{ color: "#003366" }}>Party:</strong>{" "}
+                <span
+                  style={{
+                    backgroundColor: "#003366",
+                    color: "#fff",
+                    padding: "2px 6px",
+                    borderRadius: "5px",
+                  }}
+                >
+                  {data.political_party}
+                </span>
+              </p>
+              {data.political_group && (
+                <p style={{ margin: "4px 0" }}>
+                  <strong>Group:</strong> {data.political_group}
+                </p>
+              )}
+              <Link
+                href={`/projects/${encodeURIComponent(
+                  `${data.firstname}-${data.name}`
+                )}`}
+              >
+                <Button
+                  style={{ backgroundColor: "#0d6efd", marginTop: "0.5rem" }}
+                >
                   View Projects
                 </Button>
               </Link>
             </div>
 
-            <p>
-              <strong>Party:</strong> {data.political_party}
-              <br />
-              {data.political_group && (
-                <>
-                  <strong>Group:</strong> {data.political_group}
-                </>
-              )}
-            </p>
-
             <ChartRow>
-              {renderChart("Presences", Object.entries(data.presence.status).map(([k, v]) => ({
-                name: k,
-                value: v,
-              })))}
-              {renderChart("Projects", [
-                { name: "publie", value: data.laws.details.filter((p: any) => p.status?.toLowerCase().includes("publie")).length },
-                { name: "retire", value: data.laws.details.filter((p: any) => p.status?.toLowerCase().includes("retire")).length },
-                { name: "rejete", value: data.laws.details.filter((p: any) => p.status?.toLowerCase().includes("rejete")).length },
-                { name: "autres", value: data.laws.details.filter((p: any) => {
-                  const s = p.status?.toLowerCase() || "";
-                  return !s.includes("publie") && !s.includes("retire") && !s.includes("rejete");
-                }).length },
+              {renderChart(
+                "Présences totales",
+                Object.entries(data.presence.status).map(([k, v]) => ({
+                  name: k,
+                  value: v,
+                }))
+              )}
+              {renderChart("Projets totaux", [
+                {
+                  name: "publie",
+                  value: data.laws.details.filter((p: any) =>
+                    p.status?.toLowerCase().includes("publie")
+                  ).length,
+                },
+                {
+                  name: "retire",
+                  value: data.laws.details.filter((p: any) =>
+                    p.status?.toLowerCase().includes("retire")
+                  ).length,
+                },
+                {
+                  name: "rejete",
+                  value: data.laws.details.filter((p: any) =>
+                    p.status?.toLowerCase().includes("rejete")
+                  ).length,
+                },
+                {
+                  name: "autres",
+                  value: data.laws.details.filter((p: any) => {
+                    const s = p.status?.toLowerCase() || "";
+                    return (
+                      !s.includes("publie") &&
+                      !s.includes("retire") &&
+                      !s.includes("rejete")
+                    );
+                  }).length,
+                },
               ])}
-              {renderChart("Votes", [
+              {renderChart("Votes totaux", [
                 { name: "oui", value: data.votes.stats.oui },
                 { name: "non", value: data.votes.stats.non },
                 { name: "abstention", value: data.votes.stats.abstention },
