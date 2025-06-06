@@ -64,6 +64,19 @@ const dataLaws = readExcel(path.join(__dirname, "db", "112-texte-loi.xlsx"));
 // API
 // =========================
 
+const dataPhotos = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "db", "deputy-photos.json"), "utf-8")
+);
+
+
+function findPhotoUrl(firstname, lastname) {
+  const fullName = normalize(`${firstname} ${lastname}`);
+  const found = dataPhotos.find((p) => normalize(p.name) === fullName);
+  return found ? found.img : null;
+}
+
+
+
 app.get("/deputy", (req, res) => {
   const searchName = req.query.name?.trim();
   if (!searchName) {
